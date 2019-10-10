@@ -25,7 +25,7 @@ namespace TabLimiter
         public const string PackageGuidString = "47fc8d2a-c0e2-448f-9404-a52ad69694ed";
         private IVsUIShell _shellService;
 
-        private IVsUIShell7 _shellService7
+        private IVsUIShell7 ShellService7
         {
             get
             {
@@ -35,7 +35,7 @@ namespace TabLimiter
         }
 
         private uint _cookie;
-        private FrameEvents eventListener;
+        private FrameEvents _eventListener;
 
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
@@ -44,23 +44,23 @@ namespace TabLimiter
             _shellService = await GetServiceAsync(typeof(IVsUIShell)) as IVsUIShell;
             Assumes.Present(_shellService);
 
-            eventListener = new FrameEvents(GetDialogPage(typeof(TabLimiterOptions)) as TabLimiterOptions);
+            _eventListener = new FrameEvents(GetDialogPage(typeof(TabLimiterOptions)) as TabLimiterOptions);
 
             if (VSConstants.S_OK == _shellService.GetDocumentWindowEnum(out var frames))
             {
                 foreach (IVsWindowFrame frame in new EnumerableWindowsCollection(frames))
                 {
-                    eventListener.OnFrameCreated(frame);
+                    _eventListener.OnFrameCreated(frame);
                 }
             }
-            _cookie = _shellService7.AdviseWindowFrameEvents(eventListener);
+            _cookie = ShellService7.AdviseWindowFrameEvents(_eventListener);
         }
 
         protected override void Dispose(bool disposing)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
-            eventListener?.Dispose();
-            _shellService7.UnadviseWindowFrameEvents(_cookie);
+            _eventListener?.Dispose();
+            ShellService7.UnadviseWindowFrameEvents(_cookie);
         }
 
         private class EnumerableWindowsCollection : EnumerableComCollection<IEnumWindowFrames, IVsWindowFrame>
@@ -96,8 +96,8 @@ namespace TabLimiter
 
     internal class FrameEvents : IVsWindowFrameEvents, IDisposable
     {
-        private IDictionary<IVsWindowFrame, DateTime> _currentWindows = new Dictionary<IVsWindowFrame, DateTime>();
-        private TabLimiterOptions _dialogPage;
+        private readonly IDictionary<IVsWindowFrame, DateTime> _currentWindows = new Dictionary<IVsWindowFrame, DateTime>();
+        private readonly TabLimiterOptions _dialogPage;
 
         public FrameEvents(TabLimiterOptions dialogPage)
         {
@@ -142,12 +142,9 @@ namespace TabLimiter
 
         private void KillLastIfTooMuch()
         {
-            var nonPinned = _currentWindows.Where(x => !IsPinned(x.Key)).ToArray();
-            if (nonPinned.Length <= _dialogPage.MaxNumberOfTabs)
-            {
-                return;
-            }
             ThreadHelper.ThrowIfNotOnUIThread();
+            var nonPinned = _currentWindows.Where(x => !IsPinned(x.Key)).ToArray();
+            if (nonPinned.Length <= _dialogPage.MaxNumberOfTabs) { return; }
             foreach (var window in nonPinned
                 .OrderByDescending(x => GetPreviewScore(x.Key))
                 .ThenBy(x => x.Value).Select(x => x.Key))
