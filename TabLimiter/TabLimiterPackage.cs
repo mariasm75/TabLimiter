@@ -115,10 +115,7 @@ namespace TabLimiter
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             _currentWindows.Add(frame, DateTime.Now);
-            if (_currentWindows.Count > _dialogPage.MaxNumberOfTabs)
-            {
-                KillLastIfTooMuch();
-            }
+            KillLastIfTooMuch();
         }
 
         public void OnFrameDestroyed(IVsWindowFrame frame)
@@ -145,12 +142,13 @@ namespace TabLimiter
 
         private void KillLastIfTooMuch()
         {
-            if (_currentWindows.Count <= _dialogPage.MaxNumberOfTabs)
+            var nonPinned = _currentWindows.Where(x => !IsPinned(x.Key)).ToArray();
+            if (nonPinned.Length <= _dialogPage.MaxNumberOfTabs)
             {
                 return;
             }
             ThreadHelper.ThrowIfNotOnUIThread();
-            foreach (var window in _currentWindows
+            foreach (var window in nonPinned
                 .OrderByDescending(x => GetPreviewScore(x.Key))
                 .ThenBy(x => x.Value).Select(x => x.Key))
             {
@@ -163,7 +161,7 @@ namespace TabLimiter
             }
         }
 
-        private bool IsDirty(IVsPersistDocData pdd)
+        private static bool IsDirty(IVsPersistDocData pdd)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             if (pdd.IsDocDataDirty(out int result) == VSConstants.S_OK)
@@ -173,7 +171,14 @@ namespace TabLimiter
             return true;
         }
 
-        private int GetPreviewScore(IVsWindowFrame frame)
+        private static bool IsPinned(IVsWindowFrame window)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            ErrorHandler.ThrowOnFailure(window.GetProperty((int)__VSFPROPID5.VSFPROPID_IsPinned, out var isPinned));
+            return isPinned is bool isp && isp;
+        }
+
+        private static int GetPreviewScore(IVsWindowFrame frame)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
             ErrorHandler.ThrowOnFailure(frame.GetProperty((int)__VSFPROPID5.VSFPROPID_IsProvisional, out var result));
